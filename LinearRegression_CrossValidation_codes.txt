@@ -1,0 +1,70 @@
+
+
+>>> from pyspark.sql.types import *
+>>> from pyspark.sql.functions import *
+>>> from pyspark.sql.session import SparkSession
+>>> from pyspark.sql import SQLContext
+>>> sqlContext = SQLContext(sc)
+>>> from pyspark.ml import Pipeline
+
+>>> from pyspark.ml.feature import VectorAssembler, StringIndexer, VectorIndexer, MinMaxScaler
+>>> from pyspark.ml.tuning import CrossValidator, ParamGridBuilder, TrainValidationSplit
+
+>>> from pyspark.ml.regression import DecisionTreeRegressor
+>>> from pyspark.ml.regression import GBTRegressor
+>>> from pyspark.ml.evaluation import RegressionEvaluator
+>>> from pyspark.ml.feature import OneHotEncoder
+>>> from pyspark.ml.evaluation import BinaryClassificationEvaluator, RegressionEvaluator
+>>> from pyspark.ml.classification import LogisticRegression
+
+>>> from pyspark.sql import functions as F
+>>> import pyspark.sql.functions as F
+>>> import sys
+
+>>> csv = spark.read.csv('/user/skundu/iowaliquorsales_sample.csv', inferSchema=True, header=True)
+
+>>> csv.show(3)
+
+>>> csv.registerTempTable("temp")
+
+>>> csv1 = sqlContext.sql("""select Pack, `Bottle Volume (ml)` as BottleVolumeInMl, `State Bottle Cost` as StateBottleCost, `State Bottle Retail` as StateBottleRetail, `Bottles Sold` as BottlesSold, `Sale (Dollars)` as SaleInDollars, `Volume Sold (Liters)` as VolumeSoldInLitres from temp""")
+
+>>> df1 = csv1.filter(csv1.StateBottleCost.isNotNull())
+>>> df2 = df1.filter(df1.StateBottleRetail.isNotNull())
+>>> df3 = df2.filter(df2.BottleVolumeInMl.isNotNull())
+>>> df4 = df3.filter(df3.Pack.isNotNull())
+>>> df5 = df4.filter(df4.BottlesSold.isNotNull())
+>>> df6 = df5.filter(df5.SaleInDollars.isNotNull())
+>>> df7 = df6.filter(df6.VolumeSoldInLitres.isNotNull())
+
+>>> data = df7.select(col("Pack").cast(DoubleType()), col("BottleVolumeInMl").cast(DoubleType()), "StateBottleCost", "StateBottleRetail", col("BottlesSold").cast(DoubleType()), "VolumeSoldInLitres
+", col("SaleInDollars").alias("label"))
+
+>>> data.show(5)
+
+>>> splits = data.randomSplit([0.7, 0.3])
+>>> train = splits[0]
+>>> test = splits[1].withColumnRenamed("label", "trueLabel")
+
+>>> assembler = VectorAssembler(inputCols = ["Pack", "BottleVolumeInMl","StateBottleCost", "StateBottleRetail", "BottlesSold", "VolumeSoldInLitres"], outputCol="features")
+
+>>> lr = LinearRegression(labelCol="label",featuresCol="features", maxIter=10, regParam=0.3)
+
+>>> pipeline = Pipeline(stages=[assembler, lr])
+
+
+>>> paramGrid_cv = ParamGridBuilder().addGrid(lr.regParam, [0.3, 0.1, 0.01]).addGrid(lr.maxIter, [10, 5]).build()
+
+>>> cv = CrossValidator(estimator=pipeline, evaluator=RegressionEvaluator(), estimatorParamMaps=paramGrid_cv, numFolds=10)
+
+
+>>> piplineModel_cv = cv.fit(train)
+
+>>> prediction = piplineModel_cv.transform(test)
+>>> predicted_cv = prediction.select("features", "prediction", "trueLabel")
+>>> predicted_cv.show(10)
+
+>>> evaluator_cv = RegressionEvaluator(labelCol="trueLabel", predictionCol="prediction", metricName="rmse")
+rmse = evaluator_cv.evaluate(prediction)
+
+>>> print ("Root Mean Square Error (RMSE_CV:", rmse)
